@@ -7,42 +7,50 @@ import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
 import java.util.Stack
+import kotlin.math.E
 import kotlin.math.PI
+import kotlin.math.acos
+import kotlin.math.asin
+import kotlin.math.atan
+import kotlin.math.cos
+import kotlin.math.ln
+import kotlin.math.log10
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
 
 object CalculatorEngine {
 
   private val mathContext = MathContext(12, RoundingMode.HALF_UP)
 
   /**
-   * Evaluates an arithmetic expression string.
-   * Symbols: + (add), − or - (subtract), × or * (multiply), ÷ or / (divide),
-   * % (percentage), ^ (power), √ (square root), ( and ) (parentheses).
+   * Evaluates an arithmetic and scientific expression string.
+   * Supports:
+   * - Operators: +, − (or -), × (or *), ÷ (or /), ^ (power), % (percent)
+   * - Functions: sin, cos, tan, ln, log, √ (square root), ! (factorial)
+   * - Constants: π (pi), e
+   * - Parentheses: ( and )
+   * - Angle unit: Degrees (default) or Radians
    */
-  fun evaluate(rawExpr: String): Result<BigDecimal> {
+  fun evaluate(rawExpr: String, isDegreeMode: Boolean = true): Result<BigDecimal> {
     if (rawExpr.isBlank()) return Result.failure(IllegalArgumentException("Empty expression"))
 
     try {
-      // Normalize expression
       val expr = normalizeExpression(rawExpr)
       val tokens = tokenize(expr)
       if (tokens.isEmpty()) return Result.failure(IllegalArgumentException("No tokens"))
 
       val rpn = infixToRPN(tokens)
-      val result = evaluateRPN(rpn)
+      val result = evaluateRPN(rpn, isDegreeMode)
       return Result.success(result)
     } catch (e: ArithmeticException) {
       return Result.failure(e)
     } catch (e: Exception) {
-      return Result.failure(IllegalArgumentException("Invalid expression", e))
+      return Result.failure(IllegalArgumentException(e.message ?: "Invalid expression", e))
     }
   }
 
-  /**
-   * Formats a BigDecimal cleanly for display:
-   * Strips unnecessary trailing decimal zeros, handles scientific notation for extremely large/small values.
-   */
   fun formatResult(value: BigDecimal): String {
     val stripped = value.stripTrailingZeros()
     // For extreme values, use scientific notation
@@ -65,27 +73,31 @@ object CalculatorEngine {
       .replace("×", "*")
       .replace("÷", "/")
       .replace("−", "-")
-      .replace("π", PI.toString())
+      .replace("sin⁻¹", "asin")
+      .replace("cos⁻¹", "acos")
+      .replace("tan⁻¹", "atan")
       .replace(" ", "")
   }
 
   private sealed class Token {
     data class Number(val value: BigDecimal) : Token()
     data class Op(val char: Char, val precedence: Int, val isRightAssociative: Boolean = false) : Token()
+    data class Func(val name: String) : Token()
+    object Factorial : Token() // Postfix unary
     object LeftParen : Token()
     object RightParen : Token()
-    object Sqrt : Token()
   }
 
   private fun tokenize(expr: String): List<Token> {
     val tokens = mutableListOf<Token>()
     var i = 0
-    var lastTokenWasOpOrLeftParen = true
+    var lastTokenWasOpOrLeftParenOrFunc = true
 
     while (i < expr.length) {
       val c = expr[i]
 
       when {
+        // Digits / decimals
         c.isDigit() || c == '.' -> {
           val sb = StringBuilder()
           while (i < expr.length && (expr[i].isDigit() || expr[i] == '.')) {
@@ -93,33 +105,104 @@ object CalculatorEngine {
             i++
           }
           tokens.add(Token.Number(BigDecimal(sb.toString())))
-          lastTokenWasOpOrLeftParen = false
+          lastTokenWasOpOrLeftParenOrFunc = false
+          continue
+        }
+
+        // Functions and constants identified by words / symbols
+        expr.startsWith("asin", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("asin"))
+          i += 4
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("acos", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("acos"))
+          i += 4
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("atan", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("atan"))
+          i += 4
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("sin", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("sin"))
+          i += 3
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("cos", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("cos"))
+          i += 3
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("tan", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("tan"))
+          i += 3
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("log", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("log"))
+          i += 3
+          lastTokenWasOpOrLeftParenOrFunc = true
+          continue
+        }
+        expr.startsWith("ln", i) -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("ln"))
+          i += 2
+          lastTokenWasOpOrLeftParenOrFunc = true
           continue
         }
         c == '√' -> {
-          tokens.add(Token.Sqrt)
-          lastTokenWasOpOrLeftParen = true
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Func("sqrt"))
+          lastTokenWasOpOrLeftParenOrFunc = true
+        }
+        c == 'π' -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Number(BigDecimal(PI, mathContext)))
+          lastTokenWasOpOrLeftParenOrFunc = false
+        }
+        c == 'e' -> {
+          if (!lastTokenWasOpOrLeftParenOrFunc) tokens.add(Token.Op('*', 2))
+          tokens.add(Token.Number(BigDecimal(E, mathContext)))
+          lastTokenWasOpOrLeftParenOrFunc = false
+        }
+        c == '!' -> {
+          tokens.add(Token.Factorial)
+          lastTokenWasOpOrLeftParenOrFunc = false
         }
         c == '(' -> {
-          // Implicit multiplication e.g., 5(3) -> 5 * (3)
-          if (!lastTokenWasOpOrLeftParen) {
+          if (!lastTokenWasOpOrLeftParenOrFunc) {
             tokens.add(Token.Op('*', 2))
           }
           tokens.add(Token.LeftParen)
-          lastTokenWasOpOrLeftParen = true
+          lastTokenWasOpOrLeftParenOrFunc = true
         }
         c == ')' -> {
           tokens.add(Token.RightParen)
-          lastTokenWasOpOrLeftParen = false
+          lastTokenWasOpOrLeftParenOrFunc = false
         }
         c == '+' -> {
           tokens.add(Token.Op('+', 1))
-          lastTokenWasOpOrLeftParen = true
+          lastTokenWasOpOrLeftParenOrFunc = true
         }
         c == '-' -> {
-          if (lastTokenWasOpOrLeftParen) {
-            // Unary minus: treat as 0 - ... or negative number
-            // Lookahead number
+          if (lastTokenWasOpOrLeftParenOrFunc) {
+            // Unary minus: check if immediately followed by number
             var j = i + 1
             if (j < expr.length && (expr[j].isDigit() || expr[j] == '.')) {
               val sb = StringBuilder("-")
@@ -129,33 +212,34 @@ object CalculatorEngine {
               }
               tokens.add(Token.Number(BigDecimal(sb.toString())))
               i = j
-              lastTokenWasOpOrLeftParen = false
+              lastTokenWasOpOrLeftParenOrFunc = false
               continue
             } else {
+              // Unary minus as 0 -
               tokens.add(Token.Number(BigDecimal.ZERO))
               tokens.add(Token.Op('-', 1))
-              lastTokenWasOpOrLeftParen = true
+              lastTokenWasOpOrLeftParenOrFunc = true
             }
           } else {
             tokens.add(Token.Op('-', 1))
-            lastTokenWasOpOrLeftParen = true
+            lastTokenWasOpOrLeftParenOrFunc = true
           }
         }
         c == '*' -> {
           tokens.add(Token.Op('*', 2))
-          lastTokenWasOpOrLeftParen = true
+          lastTokenWasOpOrLeftParenOrFunc = true
         }
         c == '/' -> {
           tokens.add(Token.Op('/', 2))
-          lastTokenWasOpOrLeftParen = true
+          lastTokenWasOpOrLeftParenOrFunc = true
         }
         c == '%' -> {
           tokens.add(Token.Op('%', 2))
-          lastTokenWasOpOrLeftParen = false
+          lastTokenWasOpOrLeftParenOrFunc = false
         }
         c == '^' -> {
           tokens.add(Token.Op('^', 3, isRightAssociative = true))
-          lastTokenWasOpOrLeftParen = true
+          lastTokenWasOpOrLeftParenOrFunc = true
         }
       }
       i++
@@ -171,12 +255,13 @@ object CalculatorEngine {
     for (token in tokens) {
       when (token) {
         is Token.Number -> output.add(token)
-        is Token.Sqrt -> stack.push(token)
+        is Token.Factorial -> output.add(token) // Postfix operator attaches directly
+        is Token.Func -> stack.push(token)
         is Token.Op -> {
           while (stack.isNotEmpty()) {
             val top = stack.peek()
             val shouldPop = when (top) {
-              is Token.Sqrt -> true
+              is Token.Func -> true
               is Token.Op -> {
                 if (token.isRightAssociative) {
                   token.precedence < top.precedence
@@ -206,11 +291,8 @@ object CalculatorEngine {
               output.add(top)
             }
           }
-          if (stack.isNotEmpty() && stack.peek() is Token.Sqrt) {
+          if (stack.isNotEmpty() && stack.peek() is Token.Func) {
             output.add(stack.pop())
-          }
-          if (!foundLeft) {
-            // Mismatched paren; silently ignore or continue
           }
         }
       }
@@ -226,18 +308,90 @@ object CalculatorEngine {
     return output
   }
 
-  private fun evaluateRPN(rpn: List<Token>): BigDecimal {
+  private fun evaluateRPN(rpn: List<Token>, isDegreeMode: Boolean): BigDecimal {
     val stack = Stack<BigDecimal>()
 
     for (token in rpn) {
       when (token) {
         is Token.Number -> stack.push(token.value)
-        is Token.Sqrt -> {
-          if (stack.isEmpty()) throw IllegalArgumentException("Missing operand for √")
+        is Token.Factorial -> {
+          if (stack.isEmpty()) throw IllegalArgumentException("Missing operand for factorial")
           val operand = stack.pop()
-          if (operand < BigDecimal.ZERO) throw ArithmeticException("Invalid input for square root")
-          val result = BigDecimal(sqrt(operand.toDouble()), mathContext)
-          stack.push(result)
+          val intVal = operand.toInt()
+          if (operand.scale() > 0 && operand.stripTrailingZeros().scale() > 0) {
+            throw ArithmeticException("Factorial only defined for integers")
+          }
+          if (intVal < 0) throw ArithmeticException("Factorial undefined for negative numbers")
+          if (intVal > 100) throw ArithmeticException("Factorial overflow (>100!)")
+
+          var fact = BigDecimal.ONE
+          for (num in 2..intVal) {
+            fact = fact.multiply(BigDecimal(num), mathContext)
+          }
+          stack.push(fact)
+        }
+        is Token.Func -> {
+          if (stack.isEmpty()) throw IllegalArgumentException("Missing operand for ${token.name}")
+          val operand = stack.pop()
+          val doubleVal = operand.toDouble()
+
+          val resultVal = when (token.name) {
+            "sqrt" -> {
+              if (operand < BigDecimal.ZERO) throw ArithmeticException("Negative square root")
+              BigDecimal(sqrt(doubleVal), mathContext)
+            }
+            "sin" -> {
+              val radians = if (isDegreeMode) Math.toRadians(doubleVal) else doubleVal
+              // Correct precision near 0 (e.g. sin(180) in degrees)
+              val s = sin(radians)
+              BigDecimal(if (kotlin.math.abs(s) < 1e-15) 0.0 else s, mathContext)
+            }
+            "cos" -> {
+              val radians = if (isDegreeMode) Math.toRadians(doubleVal) else doubleVal
+              val c = cos(radians)
+              BigDecimal(if (kotlin.math.abs(c) < 1e-15) 0.0 else c, mathContext)
+            }
+            "tan" -> {
+              val radians = if (isDegreeMode) Math.toRadians(doubleVal) else doubleVal
+              val c = cos(radians)
+              if (kotlin.math.abs(c) < 1e-15) {
+                throw ArithmeticException("Tangent undefined")
+              }
+              val t = tan(radians)
+              BigDecimal(if (kotlin.math.abs(t) < 1e-15) 0.0 else t, mathContext)
+            }
+            "asin" -> {
+              if (doubleVal < -1.0 || doubleVal > 1.0) {
+                throw ArithmeticException("asin domain error: must be between -1 and 1")
+              }
+              val rad = asin(doubleVal)
+              val out = if (isDegreeMode) Math.toDegrees(rad) else rad
+              BigDecimal(if (kotlin.math.abs(out) < 1e-15) 0.0 else out, mathContext)
+            }
+            "acos" -> {
+              if (doubleVal < -1.0 || doubleVal > 1.0) {
+                throw ArithmeticException("acos domain error: must be between -1 and 1")
+              }
+              val rad = acos(doubleVal)
+              val out = if (isDegreeMode) Math.toDegrees(rad) else rad
+              BigDecimal(if (kotlin.math.abs(out) < 1e-15) 0.0 else out, mathContext)
+            }
+            "atan" -> {
+              val rad = atan(doubleVal)
+              val out = if (isDegreeMode) Math.toDegrees(rad) else rad
+              BigDecimal(if (kotlin.math.abs(out) < 1e-15) 0.0 else out, mathContext)
+            }
+            "log" -> {
+              if (doubleVal <= 0) throw ArithmeticException("Log undefined for non-positive values")
+              BigDecimal(log10(doubleVal), mathContext)
+            }
+            "ln" -> {
+              if (doubleVal <= 0) throw ArithmeticException("Ln undefined for non-positive values")
+              BigDecimal(ln(doubleVal), mathContext)
+            }
+            else -> throw IllegalArgumentException("Unknown function: ${token.name}")
+          }
+          stack.push(resultVal)
         }
         is Token.Op -> {
           if (token.char == '%') {

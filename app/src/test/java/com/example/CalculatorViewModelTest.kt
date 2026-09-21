@@ -1,8 +1,11 @@
 package com.example
 
+import com.example.calculator.CalculatorLayoutMode
 import com.example.calculator.CalculatorViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -60,6 +63,48 @@ class CalculatorViewModelTest {
   }
 
   @Test
+  fun testTrigonometricCalculation() {
+    val vm = CalculatorViewModel()
+
+    // sin(90) in degrees = 1
+    vm.onScientific("sin")
+    vm.onDigit("9")
+    vm.onDigit("0")
+    vm.onScientific(")")
+    vm.onEquals()
+
+    assertEquals("1", vm.uiState.value.currentInput)
+  }
+
+  @Test
+  fun testSquareRootCalculation() {
+    val vm = CalculatorViewModel()
+
+    // √(144) = 12
+    vm.onScientific("√")
+    vm.onDigit("1")
+    vm.onDigit("4")
+    vm.onDigit("4")
+    vm.onScientific(")")
+    vm.onEquals()
+
+    assertEquals("12", vm.uiState.value.currentInput)
+  }
+
+  @Test
+  fun testExponentiationCalculation() {
+    val vm = CalculatorViewModel()
+
+    // 2 ^ 4 = 16
+    vm.onDigit("2")
+    vm.onScientific("^")
+    vm.onDigit("4")
+    vm.onEquals()
+
+    assertEquals("16", vm.uiState.value.currentInput)
+  }
+
+  @Test
   fun testDivisionByZeroHandled() {
     val vm = CalculatorViewModel()
 
@@ -69,5 +114,55 @@ class CalculatorViewModelTest {
     vm.onEquals()
 
     assertEquals("Cannot divide by 0", vm.uiState.value.errorMessage)
+  }
+
+  @Test
+  fun testLayoutModeSwitching() {
+    val vm = CalculatorViewModel()
+
+    assertEquals(CalculatorLayoutMode.BASIC, vm.uiState.value.layoutMode)
+    assertFalse(vm.uiState.value.isScientificExpanded)
+
+    vm.setLayoutMode(CalculatorLayoutMode.SCIENTIFIC)
+    assertEquals(CalculatorLayoutMode.SCIENTIFIC, vm.uiState.value.layoutMode)
+    assertTrue(vm.uiState.value.isScientificExpanded)
+
+    vm.toggleScientific()
+    assertEquals(CalculatorLayoutMode.BASIC, vm.uiState.value.layoutMode)
+
+    vm.toggleScientific()
+    assertEquals(CalculatorLayoutMode.SCIENTIFIC, vm.uiState.value.layoutMode)
+  }
+
+  @Test
+  fun testInverseTrigonometricViewModel() {
+    val vm = CalculatorViewModel()
+
+    assertFalse(vm.uiState.value.isInverseTrig)
+    vm.toggleInverseTrig()
+    assertTrue(vm.uiState.value.isInverseTrig)
+
+    // asin(1) in degrees = 90
+    vm.onScientific("sin⁻¹")
+    vm.onDigit("1")
+    vm.onScientific(")")
+    vm.onEquals()
+
+    assertEquals("90", vm.uiState.value.currentInput)
+  }
+
+  @Test
+  fun testLogAndLnViewModel() {
+    val vm = CalculatorViewModel()
+
+    // log(100) = 2
+    vm.onScientific("log")
+    vm.onDigit("1")
+    vm.onDigit("0")
+    vm.onDigit("0")
+    vm.onScientific(")")
+    vm.onEquals()
+
+    assertEquals("2", vm.uiState.value.currentInput)
   }
 }

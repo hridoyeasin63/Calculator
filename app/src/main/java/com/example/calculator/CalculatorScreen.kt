@@ -1,11 +1,12 @@
 package com.example.calculator
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -22,12 +23,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
@@ -42,8 +41,8 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -51,7 +50,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -61,7 +59,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -97,18 +94,21 @@ fun CalculatorScreen(
         modifier = Modifier
           .fillMaxSize()
           .widthIn(max = 600.dp)
-          .padding(horizontal = 16.dp, vertical = 8.dp),
+          .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.SpaceBetween
       ) {
         // Top Bar
         CalculatorHeader(
-          isScientific = uiState.isScientificExpanded,
+          layoutMode = uiState.layoutMode,
+          isDegreeMode = uiState.isDegreeMode,
           historyCount = uiState.history.size,
+          onSelectLayoutMode = { viewModel.setLayoutMode(it) },
           onToggleScientific = { viewModel.toggleScientific() },
+          onToggleAngleMode = { viewModel.toggleAngleMode() },
           onOpenHistory = { viewModel.toggleHistory(true) }
         )
 
-        // Display Area (Expression, Result, Error)
+        // Display Area (Expression, Preview, Error, Main Result)
         CalculatorDisplay(
           expression = uiState.expression,
           currentInput = uiState.currentInput,
@@ -149,9 +149,12 @@ fun CalculatorScreen(
 
 @Composable
 private fun CalculatorHeader(
-  isScientific: Boolean,
+  layoutMode: CalculatorLayoutMode,
+  isDegreeMode: Boolean,
   historyCount: Int,
+  onSelectLayoutMode: (CalculatorLayoutMode) -> Unit,
   onToggleScientific: () -> Unit,
+  onToggleAngleMode: () -> Unit,
   onOpenHistory: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -162,36 +165,60 @@ private fun CalculatorHeader(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically
   ) {
+    // Mode Switcher Pill: Basic | Scientific
     Row(
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
+      modifier = Modifier
+        .clip(RoundedCornerShape(20.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        .padding(3.dp),
+      verticalAlignment = Alignment.CenterVertically
     ) {
-      Icon(
-        imageVector = Icons.Default.Calculate,
-        contentDescription = "Calculator Icon",
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(28.dp)
+      ModeTab(
+        text = "Basic",
+        isSelected = layoutMode == CalculatorLayoutMode.BASIC,
+        onClick = { onSelectLayoutMode(CalculatorLayoutMode.BASIC) },
+        testTag = "button_mode_basic"
       )
-      Text(
-        text = "Calculator",
-        style = MaterialTheme.typography.titleLarge.copy(
-          fontWeight = FontWeight.Bold,
-          letterSpacing = 0.5.sp
-        ),
-        color = MaterialTheme.colorScheme.onBackground
+      ModeTab(
+        text = "Scientific",
+        isSelected = layoutMode == CalculatorLayoutMode.SCIENTIFIC,
+        onClick = { onSelectLayoutMode(CalculatorLayoutMode.SCIENTIFIC) },
+        testTag = "button_mode_scientific"
       )
     }
 
     Row(
-      horizontalArrangement = Arrangement.spacedBy(4.dp),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // Toggle Scientific functions
+      // DEG / RAD toggle chip button (visible in scientific mode)
+      if (layoutMode == CalculatorLayoutMode.SCIENTIFIC) {
+        Surface(
+          onClick = onToggleAngleMode,
+          shape = RoundedCornerShape(12.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .testTag("button_toggle_angle_mode")
+        ) {
+          Text(
+            text = if (isDegreeMode) "DEG" else "RAD",
+            style = MaterialTheme.typography.labelLarge.copy(
+              fontWeight = FontWeight.Bold,
+              letterSpacing = 1.sp
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+          )
+        }
+      }
+
+      // Quick toggle icon (keeps button_toggle_scientific tag accessible)
       FilledTonalIconButton(
         onClick = onToggleScientific,
         colors = IconButtonDefaults.filledTonalIconButtonColors(
-          containerColor = if (isScientific) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-          contentColor = if (isScientific) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+          containerColor = if (layoutMode == CalculatorLayoutMode.SCIENTIFIC) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+          contentColor = if (layoutMode == CalculatorLayoutMode.SCIENTIFIC) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
         ),
         modifier = Modifier
           .minimumInteractiveComponentSize()
@@ -240,6 +267,36 @@ private fun CalculatorHeader(
 }
 
 @Composable
+private fun ModeTab(
+  text: String,
+  isSelected: Boolean,
+  onClick: () -> Unit,
+  testTag: String
+) {
+  val backgroundColor = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent
+  val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+
+  Box(
+    modifier = Modifier
+      .clip(RoundedCornerShape(16.dp))
+      .background(backgroundColor)
+      .clickable(onClick = onClick)
+      .padding(horizontal = 14.dp, vertical = 6.dp)
+      .minimumInteractiveComponentSize()
+      .testTag(testTag),
+    contentAlignment = Alignment.Center
+  ) {
+    Text(
+      text = text,
+      style = MaterialTheme.typography.labelLarge.copy(
+        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+      ),
+      color = contentColor
+    )
+  }
+}
+
+@Composable
 private fun CalculatorDisplay(
   expression: String,
   currentInput: String,
@@ -251,7 +308,6 @@ private fun CalculatorDisplay(
   val exprScrollState = rememberScrollState()
   val inputScrollState = rememberScrollState()
 
-  // Auto scroll expression and input to the end
   LaunchedEffect(expression) {
     exprScrollState.animateScrollTo(exprScrollState.maxValue)
   }
@@ -262,7 +318,7 @@ private fun CalculatorDisplay(
   Column(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 12.dp),
+      .padding(horizontal = 8.dp, vertical = 8.dp),
     verticalArrangement = Arrangement.Bottom,
     horizontalAlignment = Alignment.End
   ) {
@@ -276,9 +332,9 @@ private fun CalculatorDisplay(
       Text(
         text = expression.ifEmpty { " " },
         style = MaterialTheme.typography.bodyLarge.copy(
-          fontSize = 20.sp,
+          fontSize = 18.sp,
           fontFamily = FontFamily.Monospace,
-          letterSpacing = 1.sp
+          letterSpacing = 0.5.sp
         ),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
@@ -286,7 +342,7 @@ private fun CalculatorDisplay(
       )
     }
 
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(2.dp))
 
     // Real-time calculation preview
     AnimatedVisibility(
@@ -297,7 +353,7 @@ private fun CalculatorDisplay(
       Text(
         text = previewResult ?: "",
         style = MaterialTheme.typography.titleMedium.copy(
-          fontSize = 22.sp,
+          fontSize = 20.sp,
           fontWeight = FontWeight.Medium
         ),
         color = MaterialTheme.colorScheme.primary,
@@ -325,14 +381,14 @@ private fun CalculatorDisplay(
       )
     }
 
-    Spacer(modifier = Modifier.height(6.dp))
+    Spacer(modifier = Modifier.height(4.dp))
 
     // Main Active Input/Result Line
     val fontSize = when {
-      currentInput.length > 15 -> 28.sp
-      currentInput.length > 11 -> 36.sp
-      currentInput.length > 8 -> 44.sp
-      else -> 54.sp
+      currentInput.length > 15 -> 24.sp
+      currentInput.length > 11 -> 32.sp
+      currentInput.length > 8 -> 40.sp
+      else -> 48.sp
     }
 
     Row(
@@ -361,12 +417,11 @@ private fun CalculatorDisplay(
         )
       }
 
-      // Inline backspace icon button if input has characters
       if (currentInput.isNotEmpty() && currentInput != "0") {
         IconButton(
           onClick = onBackspace,
           modifier = Modifier
-            .padding(start = 8.dp)
+            .padding(start = 6.dp)
             .minimumInteractiveComponentSize()
             .testTag("button_inline_backspace")
         ) {
@@ -387,249 +442,611 @@ private fun CalculatorKeypad(
   viewModel: CalculatorViewModel,
   modifier: Modifier = Modifier
 ) {
+  AnimatedContent(
+    targetState = uiState.layoutMode,
+    transitionSpec = {
+      fadeIn() togetherWith fadeOut()
+    },
+    label = "KeypadLayoutModeTransition",
+    modifier = modifier
+  ) { mode ->
+    when (mode) {
+      CalculatorLayoutMode.BASIC -> BasicKeypad(uiState, viewModel)
+      CalculatorLayoutMode.SCIENTIFIC -> ScientificKeypad(uiState, viewModel)
+    }
+  }
+}
+
+@Composable
+private fun BasicKeypad(
+  uiState: CalculatorUiState,
+  viewModel: CalculatorViewModel,
+  modifier: Modifier = Modifier
+) {
   val haptic = LocalHapticFeedback.current
+  val buttonHeight = 66.dp
+  val clearLabel = if (uiState.currentInput.isNotEmpty() && uiState.currentInput != "0") "C" else "AC"
 
   Column(
     modifier = modifier,
-    verticalArrangement = Arrangement.spacedBy(10.dp)
+    verticalArrangement = Arrangement.spacedBy(8.dp)
   ) {
-    // Scientific Row (Optional expandable)
-    AnimatedVisibility(
-      visible = uiState.isScientificExpanded,
-      enter = fadeIn() + expandVertically(),
-      exit = fadeOut() + shrinkVertically()
-    ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-      ) {
-        val sciKeys = listOf("(", ")", "√", "^", "π")
-        sciKeys.forEach { key ->
-          KeypadButton(
-            text = key,
-            buttonStyle = ButtonStyle.Scientific,
-            onClick = {
-              haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-              viewModel.onScientific(key)
-            },
-            modifier = Modifier.weight(1f)
-          )
-        }
-      }
-    }
-
-    // Row 1: Clear, Sign Toggle, Percent, Divide
-    val clearLabel = if (uiState.currentInput.isNotEmpty() && uiState.currentInput != "0") "C" else "AC"
+    // Row 1: AC, ±, %, ÷
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       KeypadButton(
         text = clearLabel,
         buttonStyle = ButtonStyle.Action,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.LongPress)
           viewModel.onClear()
         },
+        testTag = "button_clear",
         modifier = Modifier.weight(1f)
       )
       KeypadButton(
         text = "±",
         buttonStyle = ButtonStyle.Function,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onToggleSign()
         },
+        testTag = "button_toggle_sign",
         modifier = Modifier.weight(1f)
       )
       KeypadButton(
         text = "%",
         buttonStyle = ButtonStyle.Function,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onPercentage()
         },
+        testTag = "button_percent",
         modifier = Modifier.weight(1f)
       )
       KeypadButton(
         text = "÷",
         buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onOperator("÷")
         },
+        testTag = "button_divide",
         modifier = Modifier.weight(1f)
       )
     }
 
-    // Row 2: 7, 8, 9, Multiply
+    // Row 2: 7, 8, 9, ×
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-      KeypadButton(
-        text = "7",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("7")
-        },
-        modifier = Modifier.weight(1f)
-      )
-      KeypadButton(
-        text = "8",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("8")
-        },
-        modifier = Modifier.weight(1f)
-      )
-      KeypadButton(
-        text = "9",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("9")
-        },
-        modifier = Modifier.weight(1f)
-      )
+      listOf("7", "8", "9").forEach { digit ->
+        KeypadButton(
+          text = digit,
+          buttonStyle = ButtonStyle.Number,
+          height = buttonHeight,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.onDigit(digit)
+          },
+          testTag = "button_$digit",
+          modifier = Modifier.weight(1f)
+        )
+      }
       KeypadButton(
         text = "×",
         buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onOperator("×")
         },
+        testTag = "button_multiply",
         modifier = Modifier.weight(1f)
       )
     }
 
-    // Row 3: 4, 5, 6, Subtract
+    // Row 3: 4, 5, 6, −
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-      KeypadButton(
-        text = "4",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("4")
-        },
-        modifier = Modifier.weight(1f)
-      )
-      KeypadButton(
-        text = "5",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("5")
-        },
-        modifier = Modifier.weight(1f)
-      )
-      KeypadButton(
-        text = "6",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("6")
-        },
-        modifier = Modifier.weight(1f)
-      )
+      listOf("4", "5", "6").forEach { digit ->
+        KeypadButton(
+          text = digit,
+          buttonStyle = ButtonStyle.Number,
+          height = buttonHeight,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.onDigit(digit)
+          },
+          testTag = "button_$digit",
+          modifier = Modifier.weight(1f)
+        )
+      }
       KeypadButton(
         text = "−",
         buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onOperator("−")
         },
+        testTag = "button_subtract",
         modifier = Modifier.weight(1f)
       )
     }
 
-    // Row 4: 1, 2, 3, Add
+    // Row 4: 1, 2, 3, +
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-      KeypadButton(
-        text = "1",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("1")
-        },
-        modifier = Modifier.weight(1f)
-      )
-      KeypadButton(
-        text = "2",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("2")
-        },
-        modifier = Modifier.weight(1f)
-      )
-      KeypadButton(
-        text = "3",
-        buttonStyle = ButtonStyle.Number,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          viewModel.onDigit("3")
-        },
-        modifier = Modifier.weight(1f)
-      )
+      listOf("1", "2", "3").forEach { digit ->
+        KeypadButton(
+          text = digit,
+          buttonStyle = ButtonStyle.Number,
+          height = buttonHeight,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.onDigit(digit)
+          },
+          testTag = "button_$digit",
+          modifier = Modifier.weight(1f)
+        )
+      }
       KeypadButton(
         text = "+",
         buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onOperator("+")
         },
+        testTag = "button_add",
         modifier = Modifier.weight(1f)
       )
     }
 
-    // Row 5: 0, ., Backspace, Equals
+    // Row 5: 0, ., ⌫, =
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       KeypadButton(
         text = "0",
         buttonStyle = ButtonStyle.Number,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onDigit("0")
         },
+        testTag = "button_0",
         modifier = Modifier.weight(1f)
       )
       KeypadButton(
         text = ".",
         buttonStyle = ButtonStyle.Number,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onDecimal()
         },
+        testTag = "button_decimal",
         modifier = Modifier.weight(1f)
       )
       KeypadButton(
         text = "⌫",
         buttonStyle = ButtonStyle.Function,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           viewModel.onBackspace()
         },
+        testTag = "button_backspace",
         modifier = Modifier.weight(1f)
       )
       KeypadButton(
         text = "=",
         buttonStyle = ButtonStyle.Equals,
+        height = buttonHeight,
         onClick = {
           haptic.performHapticFeedback(HapticFeedbackType.LongPress)
           viewModel.onEquals()
         },
+        testTag = "button_equals",
+        modifier = Modifier.weight(1f)
+      )
+    }
+  }
+}
+
+@Composable
+private fun ScientificKeypad(
+  uiState: CalculatorUiState,
+  viewModel: CalculatorViewModel,
+  modifier: Modifier = Modifier
+) {
+  val haptic = LocalHapticFeedback.current
+  val buttonHeight = 50.dp
+  val clearLabel = if (uiState.currentInput.isNotEmpty() && uiState.currentInput != "0") "C" else "AC"
+
+  val isInv = uiState.isInverseTrig
+  val sinLabel = if (isInv) "sin⁻¹" else "sin"
+  val cosLabel = if (isInv) "cos⁻¹" else "cos"
+  val tanLabel = if (isInv) "tan⁻¹" else "tan"
+
+  Column(
+    modifier = modifier,
+    verticalArrangement = Arrangement.spacedBy(6.dp)
+  ) {
+    // Row 1: INV, sin/sin⁻¹, cos/cos⁻¹, tan/tan⁻¹, ln
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      KeypadButton(
+        text = "INV",
+        buttonStyle = ButtonStyle.Scientific,
+        isActive = isInv,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.toggleInverseTrig()
+        },
+        testTag = "button_inv",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = sinLabel,
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific(sinLabel)
+        },
+        testTag = if (isInv) "button_sin_inv" else "button_sin",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = cosLabel,
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific(cosLabel)
+        },
+        testTag = if (isInv) "button_cos_inv" else "button_cos",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = tanLabel,
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific(tanLabel)
+        },
+        testTag = if (isInv) "button_tan_inv" else "button_tan",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "ln",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("ln")
+        },
+        testTag = "button_ln",
+        modifier = Modifier.weight(1f)
+      )
+    }
+
+    // Row 2: log, √, ^, (, )
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      KeypadButton(
+        text = "log",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("log")
+        },
+        testTag = "button_log",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "√",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("√")
+        },
+        testTag = "button_sqrt",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "^",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("^")
+        },
+        testTag = "button_power",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "(",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("(")
+        },
+        testTag = "button_open_paren",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = ")",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific(")")
+        },
+        testTag = "button_close_paren",
+        modifier = Modifier.weight(1f)
+      )
+    }
+
+    // Row 3: x², !, π, e, Clear
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      KeypadButton(
+        text = "x²",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("x²")
+        },
+        testTag = "button_square",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "!",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("!")
+        },
+        testTag = "button_factorial",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "π",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("π")
+        },
+        testTag = "button_pi",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "e",
+        buttonStyle = ButtonStyle.Scientific,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onScientific("e")
+        },
+        testTag = "button_e",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = clearLabel,
+        buttonStyle = ButtonStyle.Action,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+          viewModel.onClear()
+        },
+        testTag = "button_clear",
+        modifier = Modifier.weight(1f)
+      )
+    }
+
+    // Row 4: 7, 8, 9, ⌫, ÷
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      listOf("7", "8", "9").forEach { digit ->
+        KeypadButton(
+          text = digit,
+          buttonStyle = ButtonStyle.Number,
+          height = buttonHeight,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.onDigit(digit)
+          },
+          testTag = "button_$digit",
+          modifier = Modifier.weight(1f)
+        )
+      }
+      KeypadButton(
+        text = "⌫",
+        buttonStyle = ButtonStyle.Function,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onBackspace()
+        },
+        testTag = "button_backspace",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "÷",
+        buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onOperator("÷")
+        },
+        testTag = "button_divide",
+        modifier = Modifier.weight(1f)
+      )
+    }
+
+    // Row 5: 4, 5, 6, %, ×
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      listOf("4", "5", "6").forEach { digit ->
+        KeypadButton(
+          text = digit,
+          buttonStyle = ButtonStyle.Number,
+          height = buttonHeight,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.onDigit(digit)
+          },
+          testTag = "button_$digit",
+          modifier = Modifier.weight(1f)
+        )
+      }
+      KeypadButton(
+        text = "%",
+        buttonStyle = ButtonStyle.Function,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onPercentage()
+        },
+        testTag = "button_percent",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "×",
+        buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onOperator("×")
+        },
+        testTag = "button_multiply",
+        modifier = Modifier.weight(1f)
+      )
+    }
+
+    // Row 6: 1, 2, 3, ±, −
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      listOf("1", "2", "3").forEach { digit ->
+        KeypadButton(
+          text = digit,
+          buttonStyle = ButtonStyle.Number,
+          height = buttonHeight,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.onDigit(digit)
+          },
+          testTag = "button_$digit",
+          modifier = Modifier.weight(1f)
+        )
+      }
+      KeypadButton(
+        text = "±",
+        buttonStyle = ButtonStyle.Function,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onToggleSign()
+        },
+        testTag = "button_toggle_sign",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "−",
+        buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onOperator("−")
+        },
+        testTag = "button_subtract",
+        modifier = Modifier.weight(1f)
+      )
+    }
+
+    // Row 7: 0 (weight 2f), . (weight 1f), + (weight 1f), = (weight 1f)
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      KeypadButton(
+        text = "0",
+        buttonStyle = ButtonStyle.Number,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onDigit("0")
+        },
+        testTag = "button_0",
+        modifier = Modifier.weight(2f)
+      )
+      KeypadButton(
+        text = ".",
+        buttonStyle = ButtonStyle.Number,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onDecimal()
+        },
+        testTag = "button_decimal",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "+",
+        buttonStyle = ButtonStyle.Operator,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          viewModel.onOperator("+")
+        },
+        testTag = "button_add",
+        modifier = Modifier.weight(1f)
+      )
+      KeypadButton(
+        text = "=",
+        buttonStyle = ButtonStyle.Equals,
+        height = buttonHeight,
+        onClick = {
+          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+          viewModel.onEquals()
+        },
+        testTag = "button_equals",
         modifier = Modifier.weight(1f)
       )
     }
@@ -649,28 +1066,35 @@ enum class ButtonStyle {
 private fun KeypadButton(
   text: String,
   buttonStyle: ButtonStyle,
+  height: androidx.compose.ui.unit.Dp,
   onClick: () -> Unit,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  isActive: Boolean = false,
+  testTag: String? = null
 ) {
-  val containerColor = when (buttonStyle) {
-    ButtonStyle.Number -> MaterialTheme.colorScheme.surfaceContainerHigh
-    ButtonStyle.Operator -> MaterialTheme.colorScheme.primaryContainer
-    ButtonStyle.Function -> MaterialTheme.colorScheme.secondaryContainer
-    ButtonStyle.Action -> MaterialTheme.colorScheme.surfaceVariant
-    ButtonStyle.Equals -> MaterialTheme.colorScheme.primary
-    ButtonStyle.Scientific -> MaterialTheme.colorScheme.surfaceContainer
+  val containerColor = when {
+    isActive -> MaterialTheme.colorScheme.primary
+    buttonStyle == ButtonStyle.Number -> MaterialTheme.colorScheme.surfaceContainerHigh
+    buttonStyle == ButtonStyle.Operator -> MaterialTheme.colorScheme.primaryContainer
+    buttonStyle == ButtonStyle.Function -> MaterialTheme.colorScheme.secondaryContainer
+    buttonStyle == ButtonStyle.Action -> MaterialTheme.colorScheme.surfaceVariant
+    buttonStyle == ButtonStyle.Equals -> MaterialTheme.colorScheme.primary
+    buttonStyle == ButtonStyle.Scientific -> MaterialTheme.colorScheme.surfaceContainer
+    else -> MaterialTheme.colorScheme.surfaceContainer
   }
 
-  val contentColor = when (buttonStyle) {
-    ButtonStyle.Number -> MaterialTheme.colorScheme.onSurface
-    ButtonStyle.Operator -> MaterialTheme.colorScheme.onPrimaryContainer
-    ButtonStyle.Function -> MaterialTheme.colorScheme.secondary
-    ButtonStyle.Action -> MaterialTheme.colorScheme.error
-    ButtonStyle.Equals -> MaterialTheme.colorScheme.onPrimary
-    ButtonStyle.Scientific -> MaterialTheme.colorScheme.onSurfaceVariant
+  val contentColor = when {
+    isActive -> MaterialTheme.colorScheme.onPrimary
+    buttonStyle == ButtonStyle.Number -> MaterialTheme.colorScheme.onSurface
+    buttonStyle == ButtonStyle.Operator -> MaterialTheme.colorScheme.onPrimaryContainer
+    buttonStyle == ButtonStyle.Function -> MaterialTheme.colorScheme.secondary
+    buttonStyle == ButtonStyle.Action -> MaterialTheme.colorScheme.error
+    buttonStyle == ButtonStyle.Equals -> MaterialTheme.colorScheme.onPrimary
+    buttonStyle == ButtonStyle.Scientific -> MaterialTheme.colorScheme.secondary
+    else -> MaterialTheme.colorScheme.onSurface
   }
 
-  val testTagKey = when (text) {
+  val testTagKey = testTag ?: when (text) {
     "+" -> "button_add"
     "−" -> "button_subtract"
     "×" -> "button_multiply"
@@ -681,14 +1105,27 @@ private fun KeypadButton(
     "%" -> "button_percent"
     "⌫" -> "button_backspace"
     "." -> "button_decimal"
+    "^" -> "button_power"
+    "√" -> "button_sqrt"
+    "x²" -> "button_square"
+    "!" -> "button_factorial"
+    "sin" -> "button_sin"
+    "cos" -> "button_cos"
+    "tan" -> "button_tan"
+    "sin⁻¹" -> "button_sin_inv"
+    "cos⁻¹" -> "button_cos_inv"
+    "tan⁻¹" -> "button_tan_inv"
+    "log" -> "button_log"
+    "ln" -> "button_ln"
+    "INV" -> "button_inv"
     else -> "button_$text"
   }
 
-  val shape = RoundedCornerShape(22.dp)
+  val shape = RoundedCornerShape(16.dp)
 
   Box(
     modifier = modifier
-      .height(68.dp)
+      .height(height)
       .clip(shape)
       .background(containerColor)
       .clickable(
@@ -702,8 +1139,8 @@ private fun KeypadButton(
   ) {
     Text(
       text = text,
-      style = MaterialTheme.typography.titleLarge.copy(
-        fontSize = if (buttonStyle == ButtonStyle.Scientific) 20.sp else 26.sp,
+      style = MaterialTheme.typography.titleMedium.copy(
+        fontSize = if (buttonStyle == ButtonStyle.Scientific) 16.sp else 22.sp,
         fontWeight = if (buttonStyle == ButtonStyle.Number) FontWeight.Medium else FontWeight.SemiBold
       ),
       color = contentColor,
@@ -795,7 +1232,7 @@ private fun HistorySheetContent(
       LazyColumn(
         modifier = Modifier
           .fillMaxWidth()
-          .height(350.dp),
+          .height(360.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         items(history, key = { it.id }) { item ->

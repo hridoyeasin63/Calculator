@@ -13,16 +13,26 @@ data class CalculationHistoryItem(
   val timestamp: Long = System.currentTimeMillis()
 )
 
+enum class CalculatorLayoutMode {
+  BASIC,
+  SCIENTIFIC
+}
+
 data class CalculatorUiState(
   val expression: String = "",
   val currentInput: String = "0",
   val previewResult: String? = null,
   val errorMessage: String? = null,
   val isNewCalculation: Boolean = false,
+  val isDegreeMode: Boolean = true, // DEG vs RAD
   val history: List<CalculationHistoryItem> = emptyList(),
-  val isScientificExpanded: Boolean = false,
+  val layoutMode: CalculatorLayoutMode = CalculatorLayoutMode.BASIC,
+  val isInverseTrig: Boolean = false, // When true in scientific mode, toggles sin⁻¹, cos⁻¹, tan⁻¹
   val isHistoryVisible: Boolean = false
-)
+) {
+  val isScientificExpanded: Boolean
+    get() = layoutMode == CalculatorLayoutMode.SCIENTIFIC
+}
 
 class CalculatorViewModel : ViewModel() {
 
@@ -41,7 +51,7 @@ class CalculatorViewModel : ViewModel() {
       }
 
       val fullExpr = buildFullExpression(state.expression, newInput)
-      val preview = calculatePreview(fullExpr)
+      val preview = calculatePreview(fullExpr, state.isDegreeMode)
 
       state.copy(
         currentInput = newInput,
@@ -58,14 +68,14 @@ class CalculatorViewModel : ViewModel() {
       val current = if (isNew) "0" else state.currentInput
 
       // Check if current token already has decimal point
-      val lastNumber = current.split(Regex("[+\\-×÷^√()]")).lastOrNull() ?: ""
+      val lastNumber = current.split(Regex("[+\\-×÷^√()!]")).lastOrNull() ?: ""
       if (lastNumber.contains('.')) {
-        return@update state // already has decimal point
+        return@update state
       }
 
       val newInput = if (current.isEmpty()) "0." else "$current."
       val fullExpr = buildFullExpression(state.expression, newInput)
-      val preview = calculatePreview(fullExpr)
+      val preview = calculatePreview(fullExpr, state.isDegreeMode)
 
       state.copy(
         currentInput = newInput,
@@ -85,7 +95,6 @@ class CalculatorViewModel : ViewModel() {
         return@update state.copy(errorMessage = null)
       }
 
-      // If there is current input, commit it into expression with the operator
       if (current.isNotEmpty()) {
         expr = if (expr.isEmpty()) {
           "$current $op "
@@ -93,7 +102,6 @@ class CalculatorViewModel : ViewModel() {
           "$expr$current $op "
         }
       } else if (expr.isNotEmpty()) {
-        // Replace last operator if expression ends with an operator
         val trimmed = expr.trimEnd()
         val tokens = trimmed.split(" ")
         if (tokens.isNotEmpty() && isOperator(tokens.last())) {
@@ -107,7 +115,7 @@ class CalculatorViewModel : ViewModel() {
         expr = "0 $op "
       }
 
-      val preview = calculatePreview(expr.trimEnd())
+      val preview = calculatePreview(expr.trimEnd(), state.isDegreeMode)
       state.copy(
         expression = expr,
         currentInput = "",
@@ -123,7 +131,7 @@ class CalculatorViewModel : ViewModel() {
       val current = state.currentInput
       if (current.isNotEmpty()) {
         val fullExpr = buildFullExpression(state.expression, "$current%")
-        val preview = calculatePreview(fullExpr)
+        val preview = calculatePreview(fullExpr, state.isDegreeMode)
         state.copy(
           currentInput = "$current%",
           previewResult = preview
@@ -146,7 +154,7 @@ class CalculatorViewModel : ViewModel() {
       }
 
       val fullExpr = buildFullExpression(state.expression, newInput)
-      val preview = calculatePreview(fullExpr)
+      val preview = calculatePreview(fullExpr, state.isDegreeMode)
 
       state.copy(
         currentInput = newInput,
@@ -170,18 +178,16 @@ class CalculatorViewModel : ViewModel() {
         val updated = current.dropLast(1)
         val newInput = if (updated.isEmpty() && state.expression.isEmpty()) "0" else updated
         val fullExpr = buildFullExpression(state.expression, newInput)
-        val preview = calculatePreview(fullExpr)
+        val preview = calculatePreview(fullExpr, state.isDegreeMode)
         state.copy(currentInput = newInput, previewResult = preview)
       } else if (state.expression.isNotEmpty()) {
-        // Step back into expression
         val trimmed = state.expression.trimEnd()
         val parts = trimmed.split(" ")
         if (parts.size > 1) {
-          // drop last operator and make previous number the current input
           val newExpr = parts.dropLast(2).joinToString(" ").let { if (it.isNotEmpty()) "$it " else "" }
           val prevInput = parts[parts.size - 2]
           val fullExpr = buildFullExpression(newExpr, prevInput)
-          val preview = calculatePreview(fullExpr)
+          val preview = calculatePreview(fullExpr, state.isDegreeMode)
           state.copy(
             expression = newExpr,
             currentInput = prevInput,
@@ -199,12 +205,10 @@ class CalculatorViewModel : ViewModel() {
   fun onClear() {
     _uiState.update { state ->
       if (state.currentInput.isNotEmpty() && state.currentInput != "0") {
-        // First clear clears active input
         val fullExpr = state.expression.trimEnd()
-        val preview = calculatePreview(fullExpr)
+        val preview = calculatePreview(fullExpr, state.isDegreeMode)
         state.copy(currentInput = "0", errorMessage = null, previewResult = preview)
       } else {
-        // All clear (AC)
         state.copy(
           expression = "",
           currentInput = "0",
@@ -221,7 +225,7 @@ class CalculatorViewModel : ViewModel() {
       val fullExpr = buildFullExpression(state.expression, state.currentInput).trim()
       if (fullExpr.isBlank()) return@update state
 
-      val result = CalculatorEngine.evaluate(fullExpr)
+      val result = CalculatorEngine.evaluate(fullExpr, state.isDegreeMode)
       result.fold(
         onSuccess = { value ->
           val formatted = CalculatorEngine.formatResult(value)
@@ -236,7 +240,7 @@ class CalculatorViewModel : ViewModel() {
             previewResult = null,
             errorMessage = null,
             isNewCalculation = true,
-            history = listOf(historyItem) + state.history.take(29)
+            history = listOf(historyItem) + state.history.take(49)
           )
         },
         onFailure = { error ->
@@ -252,38 +256,96 @@ class CalculatorViewModel : ViewModel() {
 
   fun onScientific(fn: String) {
     _uiState.update { state ->
+      val current = state.currentInput
+      val isNew = state.isNewCalculation || current == "0"
+
       when (fn) {
+        "sin", "cos", "tan", "log", "ln", "asin", "acos", "atan", "sin⁻¹", "cos⁻¹", "tan⁻¹" -> {
+          val formattedFn = when (fn) {
+            "asin" -> "sin⁻¹"
+            "acos" -> "cos⁻¹"
+            "atan" -> "tan⁻¹"
+            else -> fn
+          }
+          val newInput = if (isNew) "$formattedFn(" else "$current$formattedFn("
+          val fullExpr = buildFullExpression(state.expression, newInput)
+          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
+        }
         "√" -> {
-          val newInput = if (state.currentInput == "0" || state.isNewCalculation) "√(" else state.currentInput + "√("
+          val newInput = if (isNew) "√(" else "$current√("
           val fullExpr = buildFullExpression(state.expression, newInput)
-          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr))
-        }
-        "(" -> {
-          val newInput = if (state.currentInput == "0" || state.isNewCalculation) "(" else state.currentInput + "("
-          val fullExpr = buildFullExpression(state.expression, newInput)
-          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr))
-        }
-        ")" -> {
-          val newInput = state.currentInput + ")"
-          val fullExpr = buildFullExpression(state.expression, newInput)
-          state.copy(currentInput = newInput, previewResult = calculatePreview(fullExpr))
+          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
         }
         "^" -> {
           onOperator("^")
           return@update _uiState.value
         }
-        "π" -> {
-          val newInput = if (state.currentInput == "0" || state.isNewCalculation) "π" else state.currentInput + "π"
+        "x²" -> {
+          // Square current number/expression
+          if (current.isNotEmpty() && current != "0") {
+            val newInput = "$current^2"
+            val fullExpr = buildFullExpression(state.expression, newInput)
+            state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
+          } else {
+            state
+          }
+        }
+        "!" -> {
+          if (current.isNotEmpty() && current != "0") {
+            val newInput = "$current!"
+            val fullExpr = buildFullExpression(state.expression, newInput)
+            state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
+          } else {
+            state
+          }
+        }
+        "(" -> {
+          val newInput = if (isNew) "(" else "$current("
           val fullExpr = buildFullExpression(state.expression, newInput)
-          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr))
+          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
+        }
+        ")" -> {
+          val newInput = "$current)"
+          val fullExpr = buildFullExpression(state.expression, newInput)
+          state.copy(currentInput = newInput, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
+        }
+        "π" -> {
+          val newInput = if (isNew) "π" else "${current}π"
+          val fullExpr = buildFullExpression(state.expression, newInput)
+          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
+        }
+        "e" -> {
+          val newInput = if (isNew) "e" else "${current}e"
+          val fullExpr = buildFullExpression(state.expression, newInput)
+          state.copy(currentInput = newInput, isNewCalculation = false, previewResult = calculatePreview(fullExpr, state.isDegreeMode))
         }
         else -> state
       }
     }
   }
 
+  fun toggleAngleMode() {
+    _uiState.update { state ->
+      val newMode = !state.isDegreeMode
+      val fullExpr = buildFullExpression(state.expression, state.currentInput)
+      val preview = calculatePreview(fullExpr, newMode)
+      state.copy(isDegreeMode = newMode, previewResult = preview)
+    }
+  }
+
+  fun setLayoutMode(mode: CalculatorLayoutMode) {
+    _uiState.update { it.copy(layoutMode = mode) }
+  }
+
   fun toggleScientific() {
-    _uiState.update { it.copy(isScientificExpanded = !it.isScientificExpanded) }
+    _uiState.update {
+      val next = if (it.layoutMode == CalculatorLayoutMode.BASIC) CalculatorLayoutMode.SCIENTIFIC else CalculatorLayoutMode.BASIC
+      it.copy(layoutMode = next)
+    }
+  }
+
+  fun toggleInverseTrig() {
+    _uiState.update { it.copy(isInverseTrig = !it.isInverseTrig) }
   }
 
   fun toggleHistory(show: Boolean? = null) {
@@ -318,12 +380,14 @@ class CalculatorViewModel : ViewModel() {
     }
   }
 
-  private fun calculatePreview(expr: String): String? {
+  private fun calculatePreview(expr: String, isDegreeMode: Boolean): String? {
     if (expr.isBlank() || isOperator(expr.takeLast(1).trim())) return null
-    // If expression doesn't contain operators, no need to show preview
-    if (!expr.any { it in "+-×÷^√%" }) return null
+    if (!expr.any { it in "+-×÷^√%!sincostanlog" } &&
+      !expr.contains("asin") && !expr.contains("acos") && !expr.contains("atan") &&
+      !expr.contains("sin⁻¹") && !expr.contains("cos⁻¹") && !expr.contains("tan⁻¹")
+    ) return null
 
-    val res = CalculatorEngine.evaluate(expr)
+    val res = CalculatorEngine.evaluate(expr, isDegreeMode)
     return res.getOrNull()?.let { "= ${CalculatorEngine.formatResult(it)}" }
   }
 

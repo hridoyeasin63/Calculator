@@ -72,6 +72,78 @@ class CalculatorEngineTest {
   }
 
   @Test
+  fun testTrigonometricSineInDegrees() {
+    val result = CalculatorEngine.evaluate("sin(90)", isDegreeMode = true)
+    assertTrue(result.isSuccess)
+    assertEquals("1", CalculatorEngine.formatResult(result.getOrThrow()))
+  }
+
+  @Test
+  fun testTrigonometricCosineInDegrees() {
+    val result = CalculatorEngine.evaluate("cos(0)", isDegreeMode = true)
+    assertTrue(result.isSuccess)
+    assertEquals("1", CalculatorEngine.formatResult(result.getOrThrow()))
+  }
+
+  @Test
+  fun testTrigonometricTangentInDegrees() {
+    val result = CalculatorEngine.evaluate("tan(45)", isDegreeMode = true)
+    assertTrue(result.isSuccess)
+    assertEquals("1", CalculatorEngine.formatResult(result.getOrThrow()))
+  }
+
+  @Test
+  fun testInverseTrigonometricSineInDegrees() {
+    val result1 = CalculatorEngine.evaluate("asin(1)", isDegreeMode = true)
+    assertTrue(result1.isSuccess)
+    assertEquals("90", CalculatorEngine.formatResult(result1.getOrThrow()))
+
+    val result2 = CalculatorEngine.evaluate("asin(0.5)", isDegreeMode = true)
+    assertTrue(result2.isSuccess)
+    assertEquals("30", CalculatorEngine.formatResult(result2.getOrThrow()))
+  }
+
+  @Test
+  fun testInverseTrigonometricCosineInDegrees() {
+    val result1 = CalculatorEngine.evaluate("acos(1)", isDegreeMode = true)
+    assertTrue(result1.isSuccess)
+    assertEquals("0", CalculatorEngine.formatResult(result1.getOrThrow()))
+
+    val result2 = CalculatorEngine.evaluate("acos(0.5)", isDegreeMode = true)
+    assertTrue(result2.isSuccess)
+    assertEquals("60", CalculatorEngine.formatResult(result2.getOrThrow()))
+  }
+
+  @Test
+  fun testInverseTrigonometricTangentInDegrees() {
+    val result1 = CalculatorEngine.evaluate("atan(1)", isDegreeMode = true)
+    assertTrue(result1.isSuccess)
+    assertEquals("45", CalculatorEngine.formatResult(result1.getOrThrow()))
+
+    val result2 = CalculatorEngine.evaluate("atan(0)", isDegreeMode = true)
+    assertTrue(result2.isSuccess)
+    assertEquals("0", CalculatorEngine.formatResult(result2.getOrThrow()))
+  }
+
+  @Test
+  fun testLogarithms() {
+    val log10Result = CalculatorEngine.evaluate("log(100)")
+    assertTrue(log10Result.isSuccess)
+    assertEquals("2", CalculatorEngine.formatResult(log10Result.getOrThrow()))
+
+    val lnResult = CalculatorEngine.evaluate("ln(e)")
+    assertTrue(lnResult.isSuccess)
+    assertEquals("1", CalculatorEngine.formatResult(lnResult.getOrThrow()))
+  }
+
+  @Test
+  fun testFactorial() {
+    val result = CalculatorEngine.evaluate("5!")
+    assertTrue(result.isSuccess)
+    assertEquals("120", CalculatorEngine.formatResult(result.getOrThrow()))
+  }
+
+  @Test
   fun testLargeNumberFormatting() {
     val value = BigDecimal("1234567.89")
     val formatted = CalculatorEngine.formatResult(value)
